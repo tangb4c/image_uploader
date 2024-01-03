@@ -187,19 +187,26 @@ std::string tolower( std::string_view str )
 	);
 	return result;
 }
-
+#if defined(__clang__)
 const std::string CONVERT = "/usr/local/bin/convert";
+#else
+const std::string CONVERT = "/usr/bin/convert";
+#endif
 
-std::filesystem::path resize( std::filesystem::path source, int width )
+std::filesystem::path resize( std::filesystem::path source, const std::string& signature, int width )
 {
 	auto ext = tolower( extension( source.string() ) );
 	if ( ext == ".heic" ) ext = ".jpg";
-	std::filesystem::path result = std::to_string( width ) + ext;
+	std::filesystem::path result = signature + "-" + std::to_string( width ) + ext;
 	system(
 		( CONVERT + ' ' + source.string() + " -thumbnail " + std::to_string( width ) + "x " + source.parent_path().string() + '/' + result.string() ).c_str()
 	);
 	return result;
 }
+
+#ifndef SITE_DOMAIN
+#error "Please define SITE_DOMAIN for link"
+#endif
 
 std::string handle_file( const nlohmann::json &js )
 {
@@ -212,37 +219,43 @@ std::string handle_file( const nlohmann::json &js )
 	const auto signature = std::to_string(
 		std::hash< std::string_view >{}( std::string_view{ reinterpret_cast< const char* >( data.data() ), data.size() } )
 	);
+	const auto dirname = std::to_string(std::hash<std::string_view>{}(std::string_view{ data.data(), data.size()/3})).substr(0, 3);
 
 	const auto filename = std::filesystem::path( js.at( "filename" ).get< std::string >() );
 	const auto extension = filename.extension();
-	const auto prefix = std::filesystem::path( "storage" ) / signature;
-	if ( !std::filesystem::is_directory( prefix ) )
+	const auto prefix = std::filesystem::path( "storage" ) / dirname;
+	const auto metadata_filename = signature + "-metadata.json";
+  const auto original_filename = signature + "-original" + extension.string();
+  const auto original_file = prefix/original_filename;
+	if ( !std::filesystem::is_regular_file(original_file))
 	{
 		nlohmann::json metadata;
-		metadata[ "metadata" ] = "metadata.json";
+		metadata[ "metadata" ] = metadata_filename;
 		std::filesystem::create_directories( prefix );
 		metadata[ "prefix" ] = prefix.string();
-		metadata[ "original" ] = "original" + extension.string();
+		metadata[ "original" ] = original_filename;
 		metadata[ "original_name" ] = filename.string();
 		const auto source = metadata[ "original" ];
-		store( prefix / ( "original" + extension.string() ), std::span{ data } );
-		metadata[ "thumbnail" ] = resize( prefix / source, 120 ).string();
-		metadata[ "forum" ] = resize( prefix / source, 600 ).string();
+		store( original_file, std::span{ data } );
+		metadata[ "thumbnail" ] = resize( original_file, signature,  120 ).string();
+		metadata[ "forum" ] = resize( original_file, signature, 600 ).string();
+		metadata[ "link"] = SITE_DOMAIN + std::string("/") + std::string( original_file);
 		auto dump_str = metadata.dump();
-#if defined(__clang__)
-		store( prefix / metadata[ "metadata" ], std::span(dump_str) );
-#else
+		#if defined(__clang__)
+		store( prefix / metadata_filename, std::span(dump_str) );
+		#else
 		store( prefix / metadata[ "metadata" ], std::span(dump_str.begin(), dump_str.end()) );
-#endif
+		#endif
 		return dump_str;
-        }
-	std::ifstream file( ( prefix / "metadata.json" ).c_str() );
+	}
+	std::ifstream file( ( prefix / metadata_filename ).c_str() );
 	return std::string( std::istream_iterator< char >{ file }, std::istream_iterator< char >{} );
 }
 
 #ifndef PASSWORD
 #error "Please define PASSWORD for password checking"
 #endif
+
 
 int main( int argc, char *argv[] )
 {

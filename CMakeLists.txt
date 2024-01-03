@@ -42,7 +42,12 @@ if( NOT PASSWORD )
 	message( FATAL_ERROR "please define PASSWORD" )
 endif()
 
+if( NOT SITE_DOMAIN )
+	message( FATAL_ERROR "please define SITE_DOMAIN" )
+endif()
+
 target_compile_definitions( image_uploader_backend
 	PRIVATE
 		-DPASSWORD="${PASSWORD}"
+		-DSITE_DOMAIN="${SITE_DOMAIN}"
 )
