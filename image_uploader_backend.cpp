@@ -237,8 +237,8 @@ std::string handle_file( const nlohmann::json &js )
 		metadata[ "original_name" ] = filename.string();
 		const auto source = metadata[ "original" ];
 		store( original_file, std::span{ data } );
-		metadata[ "thumbnail" ] = resize( original_file, signature,  120 ).string();
-		metadata[ "forum" ] = resize( original_file, signature, 600 ).string();
+//		metadata[ "thumbnail" ] = resize( original_file, signature,  120 ).string();
+//		metadata[ "forum" ] = resize( original_file, signature, 600 ).string();
 		metadata[ "link"] = SITE_DOMAIN + std::string("/") + std::string( original_file);
 		auto dump_str = metadata.dump();
 		#if defined(__clang__)
