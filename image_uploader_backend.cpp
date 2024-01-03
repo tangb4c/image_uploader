@@ -40,7 +40,7 @@ std::string_view remove_quotes( std::string_view str )
 		{
 			case '"':
 			case '\'':
-				if ( str.back() == str.front() ) 
+				if ( str.back() == str.front() )
 				{
 					return str.substr( 1, str.size() - 2 );
 				}
@@ -83,42 +83,63 @@ constexpr std::string_view trim( std::string_view str )
 	return str;
 }
 
-auto get_post_from( std::istream &stream, std::string_view ignore )
-{
-	std::unordered_map< std::string, std::string > result;
-	std::string line;
-	std::string attribute, value;
-	constexpr std::string_view content = "Content-Disposition: form-data;";
-	while ( std::getline( stream, line ) )
-	{
-		const auto trimmed_line = trim( line );
-		
-		if ( const auto start_of_multipart_indicator = trimmed_line.find( ignore );
-			start_of_multipart_indicator != std::string_view::npos )
-		{
-			if ( ( start_of_multipart_indicator + ignore.size() ) < trimmed_line.size() )
-			{
-				break;
-			}
-			value.clear();
-			continue;
-		}
-		if ( trimmed_line.starts_with( content ) )
-		{
-			const auto attr_value = for_each( split( trimmed_line.substr( content.size() ), "=" ), trim );
-			value = remove_quotes( attr_value.at( 1 ) );
-		}
-		else if ( !value.empty() )
-		{
-			result[ value ] += trimmed_line;
-		}
-	}
-	return result;
+auto get_post_from(std::istream &stream, std::string_view ignore) {
+  std::unordered_map<std::string, std::string> result;
+  std::string line;
+  std::string body, value;
+  constexpr std::string_view content = "Content-Disposition: form-data;";
+  const std::string boundary = std::string("--").append(ignore).append(1, '\r');
+  const std::string boundary_end = std::string("--").append(ignore).append("--\r");
+
+  bool parse_header = true;
+
+  while (std::getline(stream, line)) {
+//		const auto trimmed_line = trim( line );
+
+    if (boundary == line || boundary_end == line) {
+      if (value.size() && body.size()) {
+        body.pop_back();    // 移除最后一个\r
+        result[value]= body;
+      }
+      value.clear();
+      body.clear();
+      parse_header = true;
+      if(boundary_end == line){
+        break;
+      }
+      continue;
+    }
+    if (parse_header) {
+      if (line == "\r") {
+        parse_header = false;
+        continue;
+      }
+      if (line.starts_with(content)) {
+        const auto attr_list = for_each(split(line, ";"), trim);
+        for (auto &&attr: attr_list) {
+          const auto attr_value = for_each(split(attr, "="), trim);
+          if (attr_value[0] == "name") {
+            value = remove_quotes(attr_value.at(1));
+          } else if (attr_value[0] == "filename") {
+            result["filename"] = remove_quotes(attr_value.at(1));
+            result["binary"] = "from curl";  // 来自curl之类的
+          }
+        }
+
+      }
+    } else {
+      if (!body.empty()) {
+        body.append(1, '\n'); // 补上被getline移除的\n
+      }
+      body.append(line);
+    }
+  }
+  return result;
 }
 
-std::vector< std::byte > base64_decode( std::string_view in )
+std::string base64_decode( std::string_view in )
 {
-	std::vector< std::byte > out;
+	std::string out;
 	out.reserve( in.size() * 64 / 255 );
 
     constexpr std::string_view lookup = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -134,7 +155,7 @@ std::vector< std::byte > base64_decode( std::string_view in )
 			valb += 6;
 			if ( valb >= 0 )
 			{
-				out.push_back( std::byte( ( val >> valb ) & 0xFF ) );
+				out.push_back( static_cast<std::string::value_type>( ( val >> valb ) & 0xFF ) );
 				valb -= 8;
 			}
 		}
@@ -158,8 +179,8 @@ std::string_view extension( std::string_view str )
 std::string tolower( std::string_view str )
 {
 	std::string result;
-	std::transform( 
-		str.begin(), 
+	std::transform(
+		str.begin(),
 		str.end(),
 		std::back_insert_iterator( result ),
 		[]( auto c ) { return std::tolower( c ); }
@@ -167,7 +188,7 @@ std::string tolower( std::string_view str )
 	return result;
 }
 
-const std::string CONVERT = "/bin/convert";
+const std::string CONVERT = "/usr/local/bin/convert";
 
 std::filesystem::path resize( std::filesystem::path source, int width )
 {
@@ -182,7 +203,12 @@ std::filesystem::path resize( std::filesystem::path source, int width )
 
 std::string handle_file( const nlohmann::json &js )
 {
-	const auto data = base64_decode( js.at( "file" ).get< std::string >() );
+  std::string data;
+  if(js.contains("binary")){
+      data = js.at("file").get<std::string>();
+  }else{
+    data = base64_decode( js.at( "file" ).get< std::string >() );
+  }
 	const auto signature = std::to_string(
 		std::hash< std::string_view >{}( std::string_view{ reinterpret_cast< const char* >( data.data() ), data.size() } )
 	);
@@ -202,10 +228,14 @@ std::string handle_file( const nlohmann::json &js )
 		store( prefix / ( "original" + extension.string() ), std::span{ data } );
 		metadata[ "thumbnail" ] = resize( prefix / source, 120 ).string();
 		metadata[ "forum" ] = resize( prefix / source, 600 ).string();
-        auto dump_str = metadata.dump();
+		auto dump_str = metadata.dump();
+#if defined(__clang__)
+		store( prefix / metadata[ "metadata" ], std::span(dump_str) );
+#else
 		store( prefix / metadata[ "metadata" ], std::span(dump_str.begin(), dump_str.end()) );
+#endif
 		return dump_str;
-	}
+        }
 	std::ifstream file( ( prefix / "metadata.json" ).c_str() );
 	return std::string( std::istream_iterator< char >{ file }, std::istream_iterator< char >{} );
 }
@@ -230,7 +260,8 @@ int main( int argc, char *argv[] )
 			if ( i.starts_with( boundary ) )
 			{
 				auto part = i.substr( boundary.size() );
-				multi_part_boundary = part.substr( part.find_first_not_of( "-" ) );
+                                multi_part_boundary = part;
+//				multi_part_boundary = part.substr( part.find_first_not_of( "-" ) );
 			}
 		}
 		for ( auto &[k,v] : get_post_from( std::cin, multi_part_boundary ) )

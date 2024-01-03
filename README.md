@@ -49,3 +49,10 @@ location ~ .*\.(pl|py|cgi)?$ {
 systemctl restart nginx
 
 ```
+
+# debug
+
+```shell
+export 'CONTENT_TYPE=multipart/form-data; boundary=----WebKitFormBoundaryvBLsA6RILOgjyW48'
+
+```
