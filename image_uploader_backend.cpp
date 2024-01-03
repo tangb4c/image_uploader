@@ -167,7 +167,7 @@ std::string tolower( std::string_view str )
 	return result;
 }
 
-const std::string CONVERT = "/opt/local/bin/convert";
+const std::string CONVERT = "/bin/convert";
 
 std::filesystem::path resize( std::filesystem::path source, int width )
 {
@@ -202,15 +202,16 @@ std::string handle_file( const nlohmann::json &js )
 		store( prefix / ( "original" + extension.string() ), std::span{ data } );
 		metadata[ "thumbnail" ] = resize( prefix / source, 120 ).string();
 		metadata[ "forum" ] = resize( prefix / source, 600 ).string();
-		store( prefix / metadata[ "metadata" ], std::span{ metadata.dump() } );
-		return metadata.dump();
+        auto dump_str = metadata.dump();
+		store( prefix / metadata[ "metadata" ], std::span(dump_str.begin(), dump_str.end()) );
+		return dump_str;
 	}
 	std::ifstream file( ( prefix / "metadata.json" ).c_str() );
 	return std::string( std::istream_iterator< char >{ file }, std::istream_iterator< char >{} );
 }
 
 #ifndef PASSWORD
-#error "Please define PASSWORD for password checking
+#error "Please define PASSWORD for password checking"
 #endif
 
 int main( int argc, char *argv[] )

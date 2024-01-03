@@ -98,9 +98,12 @@ window.onload = () => {
 						{
 							const json = JSON.parse( text );
 							const path = window.location.origin + window.location.pathname;
+                            const url = path + json.prefix + '/' + json.original;
+                            const url_thumbnail = path + json.prefix + '/' + json.thumbnail;
+                            const url_600 = path + json.prefix + '/' + json.forum;
 							add_item(
 								json.error ? handle_error( json.error ) :
-								"[url=" + path + json.prefix + '/' + json.original + "][img]" + path + json.prefix + '/' + json.forum + "[/img][/url]"
+                                `![${json.original_name}](${url})&nbsp;&nbsp;![json.original_name]($)`
 							);
 						}
 					);

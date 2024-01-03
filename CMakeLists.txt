@@ -2,7 +2,8 @@ project( image_uploader_backend )
 
 include( FetchContent )
 
-cmake_minimum_required( VERSION 3.20 )
+cmake_minimum_required( VERSION 3.10 )
+set(CMAKE_CXX_STANDARD 20)
 
 FetchContent_Declare( fmt
 	GIT_REPOSITORY
