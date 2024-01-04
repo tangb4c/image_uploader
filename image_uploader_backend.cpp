@@ -204,6 +204,22 @@ std::filesystem::path resize( std::filesystem::path source, const std::string& s
 	return result;
 }
 
+template<typename T>
+void store_with_convert(std::filesystem::path path, std::span< T > data) {
+	const auto command = fmt::format("{} - '{}'", CONVERT, path.string());
+	FILE * pFile = popen(command.data(), "w");
+	if(pFile == nullptr)
+		throw std::runtime_error(fmt::format("popen command {} failed.", command));
+
+	size_t written_len = fwrite(data.data(), 1, data.size(), pFile);
+	pclose(pFile);
+	if(written_len != data.size()) {
+		throw std::runtime_error(fmt::format("fwrite failed. written-len:{} act-len:{} command:{}", written_len, data.size(), command));
+	}
+	if(!is_regular_file(path)) {
+		throw std::runtime_error(fmt::format("command:{} not exist file:{}", command, path.string()));
+	}
+}
 #ifndef SITE_DOMAIN
 #error "Please define SITE_DOMAIN for link"
 #endif
@@ -237,7 +253,8 @@ std::string handle_file( const nlohmann::json &js )
 		metadata[ "original" ] = original_filename;
 		metadata[ "original_name" ] = filename.string();
 		const auto source = metadata[ "original" ];
-		store( original_file, std::span{ data } );
+		// store( original_file, std::span{ data } );
+		store_with_convert( original_file, std::span{ data } );
 //		metadata[ "thumbnail" ] = resize( original_file, signature,  120 ).string();
 //		metadata[ "forum" ] = resize( original_file, signature, 600 ).string();
 		metadata[ "link"] = SITE_DOMAIN + std::string("/") + std::string( original_file);
