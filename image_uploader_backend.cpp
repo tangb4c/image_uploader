@@ -225,7 +225,8 @@ std::string handle_file( const nlohmann::json &js )
 	const auto extension = filename.extension();
 	const auto prefix = std::filesystem::path( "storage" ) / dirname;
 	const auto metadata_filename = signature + "-metadata.json";
-  const auto original_filename = signature + "-original" + extension.string();
+  // const auto original_filename = signature + "-original" + extension.string();
+  const auto original_filename = signature + "-original.webp";
   const auto original_file = prefix/original_filename;
 	if ( !std::filesystem::is_regular_file(original_file))
 	{
