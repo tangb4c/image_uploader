@@ -19,7 +19,14 @@ FetchContent_Declare( json
 		v3.11.2
 )
 
-FetchContent_MakeAvailable( fmt json )
+FetchContent_Declare( spdlog
+	GIT_REPOSITORY
+		https://github.com/gabime/spdlog.git
+	GIT_TAG
+		v1.12.0
+)
+
+FetchContent_MakeAvailable( fmt json spdlog)
 
 set( CMAKE_EXECUTABLE_SUFFIX ".cgi" )
 
@@ -36,6 +43,7 @@ target_link_libraries( image_uploader_backend
 	PRIVATE
 		fmt
 		nlohmann_json
+		spdlog
 )
 
 if( NOT PASSWORD )

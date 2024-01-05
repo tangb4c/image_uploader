@@ -1,3 +1,5 @@
+#define SPDLOG_ACTIVE_LEVEL SPDLOG_LEVEL_TRACE
+
 #include <span>
 #include <cstdlib>
 #include <string>
@@ -8,8 +10,12 @@
 #include <fstream>
 #include <functional>
 #include <filesystem>
+#include <set>
 #include "fmt/format.h"
 #include "nlohmann/json.hpp"
+#include "spdlog/spdlog.h"
+#include "spdlog/sinks/rotating_file_sink.h"
+
 
 std::string_view env( const char *str )
 {
@@ -99,6 +105,7 @@ auto get_post_from(std::istream &stream, std::string_view ignore) {
     if (boundary == line || boundary_end == line) {
       if (value.size() && body.size()) {
         body.pop_back();    // 移除最后一个\r
+      	spdlog::info("key:{} value-size:{}", value, body.size());
         result[value]= body;
       }
       value.clear();
@@ -115,6 +122,7 @@ auto get_post_from(std::istream &stream, std::string_view ignore) {
         continue;
       }
       if (line.starts_with(content)) {
+      	spdlog::info("header:{}", trim(line));
         const auto attr_list = for_each(split(line, ";"), trim);
         for (auto &&attr: attr_list) {
           const auto attr_value = for_each(split(attr, "="), trim);
@@ -125,7 +133,8 @@ auto get_post_from(std::istream &stream, std::string_view ignore) {
             result["binary"] = "from curl";  // 来自curl之类的
           }
         }
-
+      }else {
+	      spdlog::info("ignore header:{}", trim(line));
       }
     } else {
       if (!body.empty()) {
@@ -187,13 +196,9 @@ std::string tolower( std::string_view str )
 	);
 	return result;
 }
-#if defined(__clang__)
-const std::string CONVERT = "/usr/local/bin/convert";
-#else
-const std::string CONVERT = "/usr/bin/convert";
-#endif
+const std::string CONVERT = "/usr/bin/env PATH=/usr/local/bin:/usr/bin convert";
 
-std::filesystem::path resize( std::filesystem::path source, const std::string& signature, int width )
+std::filesystem::path resize(const std::filesystem::path& source, const std::string& signature, int width )
 {
 	auto ext = tolower( extension( source.string() ) );
 	if ( ext == ".heic" ) ext = ".jpg";
@@ -205,14 +210,18 @@ std::filesystem::path resize( std::filesystem::path source, const std::string& s
 }
 
 template<typename T>
-void store_with_convert(std::filesystem::path path, std::span< T > data) {
-	const auto command = fmt::format("{} - '{}'", CONVERT, path.string());
+void store_with_convert(const std::filesystem::path& path, std::span< T > data) {
+	const auto command = fmt::format("{} - -resize '1024>' -quality 80 '{}'", CONVERT, path.string());
+	spdlog::info("begin run convert command:{}", command);
 	FILE * pFile = popen(command.data(), "w");
+	spdlog::info("popen:{}", (void*)pFile);
 	if(pFile == nullptr)
 		throw std::runtime_error(fmt::format("popen command {} failed.", command));
 
 	size_t written_len = fwrite(data.data(), 1, data.size(), pFile);
+	spdlog::info("fwrite size:{}", written_len);
 	pclose(pFile);
+	spdlog::info("finished convert");
 	if(written_len != data.size()) {
 		throw std::runtime_error(fmt::format("fwrite failed. written-len:{} act-len:{} command:{}", written_len, data.size(), command));
 	}
@@ -223,9 +232,18 @@ void store_with_convert(std::filesystem::path path, std::span< T > data) {
 #ifndef SITE_DOMAIN
 #error "Please define SITE_DOMAIN for link"
 #endif
-
+bool should_convert(const nlohmann::json &js) {
+	const auto filename = std::filesystem::path( js.at( "filename" ).get< std::string >() );
+	if(filename.has_extension()) {
+		auto extension = tolower(filename.extension().string().substr(1));
+		std::set<std::string> whitelist {"jpg", "jpeg", "jfif", "pjpeg", "pjp", "png", "bmp", "gif", "tiff", "tif", "psd", "apng", "heic", "heics"};
+		return whitelist.contains(extension);
+	}
+	return false;
+}
 std::string handle_file( const nlohmann::json &js )
 {
+	spdlog::info("begin handle_file");
   std::string data;
   if(js.contains("binary")){
       data = js.at("file").get<std::string>();
@@ -238,11 +256,18 @@ std::string handle_file( const nlohmann::json &js )
 	const auto dirname = std::to_string(std::hash<std::string_view>{}(std::string_view{ data.data(), data.size()/3})).substr(0, 3);
 
 	const auto filename = std::filesystem::path( js.at( "filename" ).get< std::string >() );
-	const auto extension = filename.extension();
 	const auto prefix = std::filesystem::path( "storage" ) / dirname;
 	const auto metadata_filename = signature + "-metadata.json";
-  // const auto original_filename = signature + "-original" + extension.string();
-  const auto original_filename = signature + "-original.webp";
+	// dst extension
+
+	const bool should_convert_image = should_convert(js);
+  auto original_filename = signature + "-original";
+	if(should_convert_image) {
+		original_filename += ".webp";
+	}else if(filename.has_extension()) {
+		original_filename += filename.extension().string();
+	}
+
   const auto original_file = prefix/original_filename;
 	if ( !std::filesystem::is_regular_file(original_file))
 	{
@@ -254,7 +279,11 @@ std::string handle_file( const nlohmann::json &js )
 		metadata[ "original_name" ] = filename.string();
 		const auto source = metadata[ "original" ];
 		// store( original_file, std::span{ data } );
-		store_with_convert( original_file, std::span{ data } );
+		if(should_convert_image)
+			store_with_convert( original_file, std::span{ data } );
+		else
+			store( original_file, std::span{ data } );
+
 //		metadata[ "thumbnail" ] = resize( original_file, signature,  120 ).string();
 //		metadata[ "forum" ] = resize( original_file, signature, 600 ).string();
 		metadata[ "link"] = SITE_DOMAIN + std::string("/") + std::string( original_file);
@@ -274,9 +303,20 @@ std::string handle_file( const nlohmann::json &js )
 #error "Please define PASSWORD for password checking"
 #endif
 
-
+void init_log()
+{
+	// Create a file rotating logger with 10 MB size max and 3 rotated files
+	auto max_size = 1048576 * 10;
+	auto max_files = 3;
+	auto logger = spdlog::rotating_logger_mt("image-uploader", "/var/log/nginx/image-uploader.log", max_size, max_files);
+	logger->flush_on(spdlog::level::info);
+	spdlog::set_default_logger(logger);
+	spdlog::set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%s:%#] [%^%l%$] %v");
+}
 int main( int argc, char *argv[] )
 {
+	init_log();
+	spdlog::info("enter");
 	nlohmann::json js;
 	fmt::print( "Content-type: application/json\r\n\r\n" );
 	// const auto args = std::span{ argv, static_cast< size_t >( argc ) };
@@ -313,6 +353,7 @@ int main( int argc, char *argv[] )
 	}
 	catch( const std::exception &err )
 	{
+		spdlog::error(err.what());
 		js[ "error" ] = err.what();
 		fmt::print( "{}", js.dump() );
 	}
