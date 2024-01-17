@@ -82,7 +82,8 @@ window.onload = () => {
 		foreach(
 			e.dataTransfer.files,
 			( file ) => {
-				if ( !file.type.match( /image/ ) ) return;
+                // allow to upload any file
+				// if ( !file.type.match( /image/ ) ) return;
 				let reader = new FileReader();
 				reader.onload = (e2) => {
 					const regex = /data:[^\/]+\/[^;]+;base64,/;
@@ -101,10 +102,14 @@ window.onload = () => {
                             const url = path + json.prefix + '/' + json.original;
                             const url_thumbnail = path + json.prefix + '/' + json.thumbnail;
                             const url_600 = path + json.prefix + '/' + json.forum;
-							add_item(
-								json.error ? handle_error( json.error ) :
-                                `![${json.original_name}](${url})&nbsp;&nbsp;![json.original_name]($)`
-							);
+                            if(json.error){
+                                add_item(handle_error( json.error ));
+                            }else{
+                                // 直接输出markdown图片格式
+                                add_item(`![${json.original_name}](${url})`);
+                                // 只给出链接
+                                add_item(url);
+                            }
 						}
 					);
 				}
