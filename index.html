@@ -35,6 +35,20 @@ function post( path, params, action )
 	xhr.send(data);
 }
 function TEXT( t ) { return document.createTextNode( t ); }
+function SPAN( t ) {
+    let span = document.createElement('span');
+    span.appendChild(t);
+    return span;
+}
+function URL( url ) {
+    let a = document.createElement('a');
+    let name = url.substring(url.lastIndexOf('/') + 1);
+    a.appendChild(TEXT(name));
+    a.setAttribute("target", "_blank");
+    a.href = url;
+    a.title = name;
+    return a;
+}
 function handle_error( error )
 {
 	if ( error.match( /invalid password/ ) )
@@ -58,10 +72,25 @@ function set_password()
 		);
 	}
 }
-function add_item( text )
+function add_item( ...text )
 {
 	let p = document.createElement( 'p' );
-	p.appendChild( TEXT(text) );
+    first = true;
+    for(let t of text){
+        if(!first){
+            let s = SPAN(TEXT(''));
+            s.style.cssText = "padding: 0 2em";
+            p.appendChild(s);
+        }
+        first = false;
+        if(typeof t == 'object') {
+            p.appendChild(t);
+        }
+        else {
+            let o = SPAN(TEXT(t));
+            p.appendChild(o);
+        }
+    }
 	ONE("body").appendChild( p );
 }
 window.onload = () => {
@@ -87,7 +116,7 @@ window.onload = () => {
 				let reader = new FileReader();
 				reader.onload = (e2) => {
 					const regex = /data:[^\/]+\/[^;]+;base64,/;
-					let data = e2.target.result.substr( regex.exec( e2.target.result )[ 0 ].length );
+					let data = e2.target.result.substring( regex.exec( e2.target.result )[ 0 ].length );
 					post(
 						"image_uploader_backend.cgi",
 						{
@@ -106,9 +135,14 @@ window.onload = () => {
                                 add_item(handle_error( json.error ));
                             }else{
                                 // 直接输出markdown图片格式
-                                add_item(`![${json.original_name}](${url})`);
-                                // 只给出链接
+                                // add_item(URL(url), `![${json.original_name}](${url})`, url);
+                                let pos = json.original_name.lastIndexOf('.');
+                                let name = pos > 0? json.original_name.substring(0, pos): json.original_name;
+                                add_item(URL(url));
+                                add_item(`![${name}](${url})`);
                                 add_item(url);
+                                // 只给出链接
+                                // add_item(url);
                             }
 						}
 					);
